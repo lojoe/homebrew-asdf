@@ -1,0 +1,81 @@
+#!/usr/bin/env bash
+
+#:  * `asdf-outdated` [<options>]
+#:
+#:  Show current and latest stable version of all asdf plugins side-by-side
+#:
+#:  `Options:`
+#:
+#:    `-q` | `--quiet`       suppress header
+
+
+set -e
+
+header=yes
+
+# Bail out if asdf is not found
+if ! command -v asdf >/dev/null 2>&1; then
+    echo "asdf not found; are you certain you should be running this?"
+    exit 1
+fi
+
+
+while [[ $1 == -* ]]; do
+    case $1 in
+    -q | --quiet)
+        header=
+        ;;
+
+    *)
+        die "[ERROR] unrecognized option: \"$1\""
+        exit 1
+        ;;
+    esac
+    shift
+done
+
+
+# Like cut but uses whitespace based delimiters to operate on words
+# usage: cutwords [options]
+# options:
+#   -f <fields>    comma separated list of fields to output (default: -f 1)
+#   -s             suppress lines with no field delimiter
+cutwords() {
+    local fields=1
+    local suppress=
+
+    while [[ $1 == -* ]]; do
+        case $1 in
+        -f)
+            fields="$2"
+            shift
+            ;;
+
+        -s)
+            suppress="-s"
+            ;;
+
+        -)
+            break
+            ;;
+
+        *)
+            die "[ERROR] unrecognized option: \"$1\""
+            exit 1
+            ;;
+        esac
+        shift
+    done
+
+    cat "$@" | tr ' \t' ' ' | tr -s ' ' | cut -d ' ' ${suppress} -f "${fields}"
+}
+
+
+### Main ###
+
+[[ ${header} ]] && printf "%-20s %-10s %s\n" "PLUGIN" "CURRENT" "LATEST"
+asdf current 2>/dev/null | cutwords -f 1,2 | while read -r language current; do
+    latest=$(asdf latest "${language}")
+    [[ "${current}" == "${latest}" ]] && latest="-"
+    printf "%-20s %-10s %s\n" "${language}" "${current}" "${latest}"
+done

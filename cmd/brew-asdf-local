@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+
+#:  * `asdf-local` [<plugin> [<version>]
+#:
+#:  Install relevant version of plugin(s), if necessary, then set the version
+#:  in the local tool versions file.
+#:
+#:  If no arguments are given, all plugins will be set to their respective
+#:  latest version. If one argument is given, it must be the name of a single
+#:  plugin to update to the latest version. If two arguments are given, this
+#:  operates in the same way as `asdf local` except that it will first install
+#:  the specified version, if necessary.
+
+
+set -e
+
+unset plugins
+unset version
+
+
+# Bail out if asdf is not found
+if ! command -v asdf >/dev/null 2>&1; then
+    echo "asdf not found; are you certain you should be running this?"
+    exit 1
+fi
+
+
+# Display message and exit with exit code (default: 1)
+# usage: die [-<N>] [<text>]
+die() {
+	local -i exit_code=1
+	[[ "$1" == -* ]] && exit_code=${1#-} && shift
+	[[ ${exit_code} -eq 0 ]] || printf "[ERROR] "
+	[[ "$*" ]] && printf "%s\n" "$*"
+	exit "${exit_code}"
+}
+
+
+# Like cut but uses whitespace based delimiters to operate on words
+# usage: cutwords [options]
+# options:
+#   -f <fields>    comma separated list of fields to output (default: -f 1)
+#   -s             suppress lines with no field delimiter
+cutwords() {
+    local fields=1
+    local suppress=
+
+    while [[ $1 == -* ]]; do
+        case $1 in
+        -f)
+            fields="$2"
+            shift
+            ;;
+
+        -s)
+            suppress="-s"
+            ;;
+
+        -)
+            break
+            ;;
+
+        *)
+            die "[ERROR] unrecognized option: \"$1\""
+            exit 1
+            ;;
+        esac
+        shift
+    done
+
+    cat "$@" | tr ' \t' ' ' | tr -s ' ' | cut -d ' ' ${suppress} -f "${fields}"
+}
+
+
+### Main ###
+
+if [[ $# -eq 0 ]]; then
+    plugins=$(asdf current 2>/dev/null | cutwords)
+elif asdf plugin list | grep -qE "^${1}$"; then
+    plugins="$1"
+else
+    die "unrecognized plugin: \"$1\""
+fi
+
+
+if [[ $# -eq 2 ]]; then
+    if asdf list all "${plugins}" 2>/dev/null | grep -qE "^${2}$"; then
+        version="$2"
+    else
+        die "unrecognized version for ${plugins}: \"$2\""
+    fi
+fi
+
+
+for plugin in ${plugins}; do
+    ver=${version-$(asdf latest "${plugin}")}
+    current=$(asdf current "${plugin}" | cutwords -f 2)
+
+    [[ "${current}" == "${ver}" ]] && continue
+
+    if ! asdf list "${plugin}" 2>/dev/null | grep -qE "^${ver}$"; then
+        asdf install "${plugin}" "${ver}"
+    fi
+
+    asdf local "${plugin}" "${ver}"
+done
